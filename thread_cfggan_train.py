@@ -69,10 +69,14 @@ def proc(rank, gpu,opt):
      opt.G_activation=None
      opt.D_activation=None
    if opt.saved:
-      from_file = torch.load(opt.saved, map_location=rank if torch.cuda.is_available() else 'cpu')
+      from_file = torch.load(opt.saved, map_location=opt.device if torch.cuda.is_available() else 'cpu')
       saved = opt.saved
+      batch_size = opt.batch_size
+      cfg_N = opt.batch_size * opt.cfg_x_epo
       logging('WARNING: from file is begin')
       opt = from_file['opt']
+      opt.batch_size = batch_size
+      opt.cfg_N = cfg_N
    print( ds_attr['nclass'])
    print(opt.n_classes)
   #  opt.n_classes = ds_attr['nclass']   

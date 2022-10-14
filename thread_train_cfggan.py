@@ -400,13 +400,15 @@ def prepare_parser(parser):
     ###ddp
   parser.add_argument('--num_proc_node', type=int, default=1,
                         help='The number of nodes in multi node env.')
-  parser.add_argument('--num_process_per_node', type=int, default=2,
+  parser.add_argument('--num_process_per_node', type=int, default=4,
                         help='number of gpus')
   parser.add_argument('--node_rank', type=int, default=0,
                         help='The index of node.')
   parser.add_argument('--local_rank', type=int, default=0,
                         help='rank of process in the node')
   parser.add_argument('--master_address', type=str, default='127.0.0.1',
+                        help='address for master')
+  parser.add_argument('--master_port', type=str, default='6030',
                         help='address for master')
 
    
@@ -616,7 +618,7 @@ def check_args_(opt):
 def init_processes(rank, size, fn, args):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = args.master_address
-    os.environ['MASTER_PORT'] = '6020'
+    os.environ['MASTER_PORT'] = args.master_port
     torch.cuda.set_device(args.local_rank)
     args.gpu = args.local_rank
     dist.init_process_group(backend='nccl', init_method='env://', rank=rank, world_size=size)

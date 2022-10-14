@@ -13,17 +13,17 @@ from utils.utils0 import raise_if_absent, add_if_absent_, logging, raise_if_nonp
 from torch.autograd import Variable
 import numpy as np
 # from logger import Logger
-import visdom
+# import visdom
 import copy
 import math
 import torch.nn as nn
 White=255
 RMSprop_str='RMSprop'
 Adam_str='Adam'
-vizG = visdom.Visdom(env='G2')  # 初始化visdom类
-vizD = visdom.Visdom(env='D2')
-vizG_n = visdom.Visdom(env='Gn')
-vizG_f = visdom.Visdom(env='fn')
+# vizG = visdom.Visdom(env='G2')  # 初始化visdom类
+# vizD = visdom.Visdom(env='D2')
+# vizG_n = visdom.Visdom(env='Gn')
+# vizG_f = visdom.Visdom(env='fn')
 #-----------------------------------------------------------------
 def d_loss_dflt(d_out_real, d_out_fake, alpha):
    return (  torch.log(1+torch.exp((-1)*d_out_real)) 
@@ -80,7 +80,16 @@ def wgan_gp(self,fake,real,LAMBDA,netD,d_param,centered):
 def new_gp(self,fake,real,LAMBDA,netD,d_param,centered,scale=0.1):
    real_data = real
    real_data = real_data.cuda()
-   fake_data = 1        # alp1t('fake_data shape is {}'.format(fake_data.shape))
+   fake_data = fake
+   fake_data=fake_data.cuda()
+   # netD = self.D
+            # alpha = torch.rand(real.size(0),1,1, 1)
+            # alpha = alpha.expand(real_data.size())
+   alpha = torch.cuda.FloatTensor(np.random.random((real_data.size(0),1,1,1)))
+            # alpha = alpha.cuda()
+            # alpha = alpha.to(device)#cuda() #gpu) #if use_cuda else alpha
+            # print('real_data shape is {}'.format(real_data.shape))
+            # print('fake_data shape is {}'.format(fake_data.shape))
    interpolates = alpha * real_data + ((1 - alpha) * fake_data)
             # print('interpolates shape is {}'.format(interpolates.shape))
             # interpolates = interpolates.to(device)#.cuda()
@@ -153,7 +162,7 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
    # if fromfile != None:
    #    ddg.initialize_G(g_loss, opt.cfg_N)
    if saved:
-      begin = saved[-8:-4]
+      begin = saved[-9:-4]
       timeLog('stages ' + str(begin) + '.')
       begin = int(begin)
    else:
@@ -292,10 +301,14 @@ class DDG:
       self.device = opt.device
       self.gpu = opt.gpu
       self.batch_size = opt.batch_size
+      print(self.batch_size)
+      
+    
       
       for i in range(opt.cfg_T):
          a = d_config(requires_grad=True).to(self.device)
-         # a.train()
+         a = nn.SyncBatchNorm.convert_sync_batchnorm(a)
+         a = nn.parallel.DistributedDataParallel(a, device_ids=[self.gpu],broadcast_buffers=False,find_unused_parameters = True)
          self.d_params_list.append(a)
       self.d_net = d_config(requires_grad=True).to(self.device)
       self.d_net = nn.SyncBatchNorm.convert_sync_batchnorm(self.d_net)
@@ -319,6 +332,7 @@ class DDG:
 
       if from_file is not None:
          self.load(from_file)
+         from_file = None
 
       logging('----  D  ----')
       if self.verbose:         
@@ -363,11 +377,14 @@ class DDG:
    def load(self,  d):
       assert len(self.d_params_list) == len(d['d_params_list'])
       for i in range(len(self.d_params_list)):
-         self.d_params_list[i] = copy.deepcopy(d['d_params_list'][i])    
+#          self.d_params_list[i] = copy.deepcopy(d['d_params_list'][i])
+         self.d_params_list[i].load_state_dict(d['d_params_list'][i].state_dict())
          # copy_params(src=d['d_params_list'][i], dst=self.d_params_list[i])
-      self.d_net = copy.deepcopy(d['d_params'])
-      self.g_net = copy.deepcopy(d['g_params']) 
-      self.d_optimizer = copy.deepcopy(d['d_optimizer'])
+#       self.d_net = copy.deepcopy(d['d_params'])
+      self.d_net.load_state_dict(d['d_params'].state_dict())
+#       self.g_net = copy.deepcopy(d['g_params'])
+      self.g_net.load_state_dict(d['g_params'].state_dict())
+      self.d_optimizer.load_state_dict(d['d_optimizer'].state_dict())
       # copy_params(src=d['d_params'], dst=self.d_params)
       # copy_params(src=d['g_params'], dst=self.g_params)      
       self.cfg_eta = d['cfg_eta']
