@@ -30,6 +30,82 @@ def conv2dT_params(ni, no, k, do_bias, std=0.01):
            'b': torch.zeros(no) if do_bias else None }
 
 
+class Generator_toy(nn.Module):
+  def __init__(self,input_dim=256,output_dim=2, n_hidden=128, n_layer=2):
+    super(Generator_toy,self).__init__()
+    self.init = 'ortho'
+    self.skip_init = False
+    self.blocks=[]
+    self.blocks+=[[nn.Linear(input_dim,n_hidden*n_layer)]]
+    self.blocks+=[[nn.Tanh()]]
+    self.blocks+=[[nn.Linear(n_hidden*n_layer,n_hidden*n_layer)]]
+    self.blocks+=[[nn.Tanh()]]
+    self.blocks+=[[nn.Linear(n_hidden*n_layer,output_dim)]]
+    self.blocks = nn.ModuleList([nn.ModuleList(block) for block in self.blocks])
+    if not self.skip_init:
+      self.init_weights()
+  # Initialize
+  def init_weights(self):
+      self.param_count = 0
+      for module in self.modules():
+        if (isinstance(module, nn.Conv2d)
+          or isinstance(module, nn.Linear)
+          or isinstance(module, nn.Embedding)):
+          if self.init == 'ortho':
+            init.orthogonal_(module.weight)
+          elif self.init == 'N02':
+            init.normal_(module.weight, 0, 0.02)
+          elif self.init in ['glorot', 'xavier']:
+            init.xavier_uniform_(module.weight)
+          else:
+            print('Init style not recognized...')
+          self.param_count += sum([p.data.nelement() for p in module.parameters()])
+      print('Param count for D''s initialized parameters: %d' % self.param_count)
+  def forward(self, x):
+    h = x
+    for index, blocklist in enumerate(self.blocks):
+        for block in blocklist:
+          h = block(h)
+    return h
+
+class discriminator_toy(nn.Module):
+  def __init__(self,input_dim=2,output_dim=1, n_hidden=128, n_layer=2):
+    super(discriminator_toy,self).__init__()
+    self.init = 'ortho'
+    self.skip_init = False
+    self.blocks=[]
+    self.blocks+=[[nn.Linear(input_dim,n_hidden*n_layer)]]
+    self.blocks+=[[nn.Tanh()]]
+    self.blocks+=[[nn.Linear(n_hidden*n_layer,n_hidden*n_layer)]]
+    self.blocks+=[[nn.Tanh()]]
+    self.blocks+=[[nn.Linear(n_hidden*n_layer,output_dim)]]
+    self.blocks = nn.ModuleList([nn.ModuleList(block) for block in self.blocks])
+    if not self.skip_init:
+      self.init_weights()
+  # Initialize
+  def init_weights(self):
+      self.param_count = 0
+      for module in self.modules():
+        if (isinstance(module, nn.Conv2d)
+          or isinstance(module, nn.Linear)
+          or isinstance(module, nn.Embedding)):
+          if self.init == 'ortho':
+            init.orthogonal_(module.weight)
+          elif self.init == 'N02':
+            init.normal_(module.weight, 0, 0.02)
+          elif self.init in ['glorot', 'xavier']:
+            init.xavier_uniform_(module.weight)
+          else:
+            print('Init style not recognized...')
+          self.param_count += sum([p.data.nelement() for p in module.parameters()])
+      print('Param count for D''s initialized parameters: %d' % self.param_count)
+  def forward(self, x):
+    h = x
+    for index, blocklist in enumerate(self.blocks):
+        for block in blocklist:
+          h = block(h)
+    # x = self.blocks(x)
+    return h
 ##-------use nn module G and D-------------#
 
 class Generator(nn.Module):

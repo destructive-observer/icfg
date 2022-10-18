@@ -27,7 +27,7 @@ Resnet1024 = 'resnet1024'
 Biggan='biggan'
 cudnn.benchmark = True
 Resnet_L='resnet_large'
-
+Toy = 'Toy'
 
 #----------------------------------------------------------
 def proc(rank, gpu,opt): 
@@ -88,7 +88,9 @@ def proc(rank, gpu,opt):
                                 do_bias=not opt.do_no_bias)
       
       elif opt.d_model == Biggan:
-        return thread_netdef.biggan_D(resolution=opt.resolution,D_ch=opt.g_dim,D_attn=str(opt.g_dim))       
+        return thread_netdef.biggan_D(resolution=opt.resolution,D_ch=opt.g_dim,D_attn=str(opt.g_dim))
+      elif opt.d_model == Toy:
+        return thread_netdef.discriminator_toy()          
       else:
          raise ValueError('d_model must be dcganx.')
    def g_config(requires_grad):  # G
@@ -98,8 +100,11 @@ def proc(rank, gpu,opt):
                                 do_bias=not opt.do_no_bias)
       elif opt.d_model == Biggan:
             return thread_netdef.biggan_G(resolution=opt.resolution,G_ch=opt.g_dim,G_attn=str(opt.g_dim))       
+      
+      elif opt.d_model == Toy:
+            return thread_netdef.Generator_toy()      
       else:
-         raise ValueError('g_model must be dcganx or fcn.')
+          raise ValueError('g_model must be dcganx or fcn.')
    def z_gen(num):
       return normal_(torch.Tensor(num, opt.z_dim), std=opt.z_std),torch.zeros(num).random_(0, 10)
    def z_y_gen_function_new(num,dim_z, nclasses):
@@ -178,6 +183,21 @@ def proc(rank, gpu,opt):
      loader = DataLoader(ds, opt.batch_size, shuffle=True, drop_last=True, 
                        num_workers=opt.num_workers, 
                        pin_memory=torch.cuda.is_available())  
+   elif opt.dataset == 'Toy' and opt.model ==Toy:
+    #  z_y_gen = z_gen
+     ds = get_ds(opt.dataset, opt.dataroot, is_train=True, do_download=opt.do_download, do_augment=opt.do_augment)
+     timeLog('#train = %d' % len(ds))     
+     train_sampler = torch.utils.data.distributed.DistributedSampler(ds,
+                                                                    num_replicas=opt.world_size,
+                                                                    rank=rank)
+     loader = torch.utils.data.DataLoader(ds,
+                                               batch_size=opt.batch_size,
+                                               shuffle=False,
+                                               num_workers=0,
+                                               pin_memory=False,
+                                               sampler=train_sampler,
+                                               drop_last = True)
+     opt.n_classes = None  
    else:
      ds = get_ds(opt.dataset, opt.dataroot, is_train=True, do_download=opt.do_download, do_augment=opt.do_augment)
      timeLog('#train = %d' % len(ds))

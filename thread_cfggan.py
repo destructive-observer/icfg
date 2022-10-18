@@ -145,7 +145,7 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
 
    check_opt_(opt)
    # if opt.local_rank == 0 : 
-   #   write_real(opt, loader)
+      # write_real(opt, loader)
    # write_real_num(opt, loader)
    if z_y_gen is not None:
       z_gen = z_y_gen
@@ -773,6 +773,20 @@ def generate(opt, ddg, stage='',l='1'):
       os.makedirs(dir)   
       
    fake = ddg.generate(opt.num_gen)
+   
+   if opt.dataset == 'Toy':
+      nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen)
+      from matplotlib import pyplot as plt
+      from sample_gaussian import sample_mog
+      data = sample_mog(opt.num_gen)
+      fig = plt.figure(figsize=(5,5))
+      plt.scatter(data[:,0],data[:,1],  c='g',edgecolor='none')
+      plt.scatter(fake[:,0],fake[:,1], edgecolor='none')
+      plt.xlabel([])
+      plt.ylabel([])
+      plt.axis('off')
+      fig.savefig(nm+'.jpg',dpi=600,format='jpg')
+      return
 
    if opt.gen_nrow > 0:
       nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen) # 'c' for collage or collection

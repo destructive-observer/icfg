@@ -14,6 +14,7 @@ import imageio
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from sample_gaussian import sample_mog
 # from torchvision import transforms
 #----------------------------------------------------------
 def get_ds_attr(dataset):
@@ -28,6 +29,8 @@ def get_ds_attr(dataset):
       nclass = 1000; imgsz = 64
    elif dataset == 'MNIST':
       nclass = 10; channels = 1
+   elif dataset  == 'Toy':
+      nclass = 10; channels = 1   
    elif dataset  == 'FashionMNIST':
       nclass = 10; channels = 1
    elif dataset  == 'EMNIST':
@@ -100,7 +103,9 @@ def get_ds(dataset, dataroot, is_train, do_download, do_augment):
    elif dataset =='CIFAR10':
       return getattr(datasets, dataset)(dataroot, train=is_train, transform=tr, download=do_download)
    elif dataset =='CIFAR100':
-          return getattr(datasets, dataset)(dataroot, train=is_train, transform=tr, download=do_download)
+      return getattr(datasets, dataset)(dataroot, train=is_train, transform=tr, download=do_download)
+   elif dataset =='Toy':
+      return ToySample()
    elif dataset =='FashionMNIST':
       return getattr(datasets, dataset)(dataroot, train=is_train, transform=tr, download=do_download)
    elif dataset.startswith('ImageNet'):
@@ -256,3 +261,14 @@ class ImageFolder(Dataset):
 
         elif self.cache == 'in_memory':
             return x
+
+class ToySample(Dataset):
+    def __init__(self,num=2000,batch_size=512):
+        self.files=num*batch_size
+
+    def __len__(self):
+      #   print(len(self.files) * self.repeat)
+        return self.files
+
+    def __getitem__(self, idx):
+        return sample_mog(1)

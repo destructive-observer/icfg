@@ -4,7 +4,7 @@ import argparse
 
 from utils.utils0 import raise_if_absent, add_if_absent_, set_if_none, raise_if_nonpositive_any, show_args, ArgParser_HelpWithDefaults
 from thread_cfggan_train import proc as thread_cfggan_train
-from thread_cfggan_train import DCGANx, Resnet4, FCn, Resnet3,DCGAN4,Balance,Resnet256,Resnet128,Resnet1024,Balance2,CDCGANx
+from thread_cfggan_train import DCGANx, Resnet4, FCn, Resnet3,DCGAN4,Balance,Resnet256,Resnet128,Resnet1024,Balance2,CDCGANx,Toy
 from thread_cfggan import RMSprop_str,Adam_str
 import utils_biggan
 from torch.multiprocessing import Process
@@ -31,14 +31,15 @@ Bedroom256 = 'lsun_bedroom256'
 CelebaHQ = 'celebahq_1024'
 Celeba128 = 'celebahq_128'
 Celeba256 = 'celebahq_256'
+Toy_G='Toy'
 #----------------------------------------------------------
 def add_args_(parser):
    #---  proc
    parser.add_argument('--seed', type=int, default=1, help='Random seed.')   
 
-   parser.add_argument('--dataset', type=str, choices=[MNIST, SVHN, Bedroom64, Church64,CIFAR10,CIFAR100,Tower64,Brlr64,Twbg64,FashionMNIST,EMNIST,Bedroom256,Bedroom128,CelebaHQ,Celeba128,Celeba256,ImageNet,ImageNet64], required=True, help='Dataset.')
+   parser.add_argument('--dataset', type=str, choices=[Toy_G,MNIST, SVHN, Bedroom64, Church64,CIFAR10,CIFAR100,Tower64,Brlr64,Twbg64,FashionMNIST,EMNIST,Bedroom256,Bedroom128,CelebaHQ,Celeba128,Celeba256,ImageNet,ImageNet64], required=True, help='Dataset.')
    parser.add_argument('--dataroot', type=str, default='.')
-   parser.add_argument('--model', type=str, choices=[CDCGANx,DCGANx,Resnet4,FC2,Resnet3,DCGAN4,Balance,Resnet256,Resnet128,Resnet1024,Balance2,Resnet_L,Biggan], help='Model.')   
+   parser.add_argument('--model', type=str, choices=[Toy,CDCGANx,DCGANx,Resnet4,FC2,Resnet3,DCGAN4,Balance,Resnet256,Resnet128,Resnet1024,Balance2,Resnet_L,Biggan], help='Model.')   
    parser.add_argument('--norm_type', type=str, default='bn', choices=['bn','none'], help="'bn': batch normalization, 'none': no normalization")   
    parser.add_argument('--batch_size', type=int, default=64, help='Number of images for training.')   
    parser.add_argument('--num_workers', type=int, default=1, help='Number of workers for retrieving images.')   
@@ -423,7 +424,7 @@ def add_sep_for_dict(split='-', **dict):
 def check_args_(opt):
    if opt.batch_size is None:
       opt.batch_size = 64 # Batch size. 
-   opt.z_dim = 128 # Dimensionality of input random vectors.
+   opt.z_dim = 256 # Dimensionality of input random vectors.
    opt.z_std = 1.0 # Standard deviation for generating input random vectors.
    opt.approx_redmax = 5
    opt.approx_decay = 0.1
@@ -531,7 +532,16 @@ def check_args_(opt):
       opt.g_depth = 7
       opt.d_dim = opt.g_dim = 64
       set_if_none(opt, 'lr', 0.00025)
-      set_if_none(opt, 'cfg_T', 15)         
+      set_if_none(opt, 'cfg_T', 15)
+   elif opt.model == Toy:
+      opt.d_model = Toy
+      opt.g_model = Toy
+      opt.d_depth = 1
+      opt.g_depth = 1
+      opt.d_dim = opt.g_dim = 16
+      set_if_none(opt, 'lr', 0.00025)
+      set_if_none(opt, 'cfg_T', 15)
+      set_if_none(opt, 'cfg_eta', 0.5)               
    else:
       raise ValueError('Unknown model: %s' % opt.model)
 
