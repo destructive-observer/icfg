@@ -424,7 +424,7 @@ def add_sep_for_dict(split='-', **dict):
 def check_args_(opt):
    if opt.batch_size is None:
       opt.batch_size = 64 # Batch size. 
-   opt.z_dim = 256 # Dimensionality of input random vectors.
+   opt.z_dim = 128 # Dimensionality of input random vectors.
    opt.z_std = 1.0 # Standard deviation for generating input random vectors.
    opt.approx_redmax = 5
    opt.approx_decay = 0.1
@@ -487,18 +487,18 @@ def check_args_(opt):
       set_if_none(opt, 'cfg_T', 15)   
    elif opt.model == Balance2:
       opt.d_model = Resnet4
-      opt.g_model = DCGANx
-      opt.d_depth = 2
-      opt.g_depth = 3
-      opt.d_dim = 32
-      opt.g_dim = 32
+      opt.g_model = Biggan
+      opt.d_depth = 4
+      opt.g_depth = 7
+      opt.d_dim = 64
+      opt.g_dim = 64
       set_if_none(opt, 'lr', 0.00025)
       set_if_none(opt, 'cfg_T', 15)   
    elif opt.model == Balance:
-      opt.d_model = Resnet4
-      opt.g_model = DCGANx
-      opt.d_depth = 3
-      opt.g_depth = 4
+      opt.d_model = DCGANx
+      opt.g_model = Biggan
+      opt.d_depth = 4
+      opt.g_depth = 7
       opt.d_dim = 64
       opt.g_dim = 64
       set_if_none(opt, 'lr', 0.00025)

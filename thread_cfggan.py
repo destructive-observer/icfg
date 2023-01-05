@@ -11,6 +11,7 @@ from utils.utils import cast
 from utils.utils0 import timeLog, copy_params, clone_params, print_params, print_num_params, stem_name
 from utils.utils0 import raise_if_absent, add_if_absent_, logging, raise_if_nonpositive_any, raise_if_nan
 from torch.autograd import Variable
+import torch.nn.functional as F
 import numpy as np
 # from logger import Logger
 # import visdom
@@ -37,19 +38,21 @@ def d_loss_wgan(d_out_real,d_out_fake, alpha):
    d_logistic_loss=(torch.log(1+torch.exp((-1)*d_out_real)) 
            + torch.log(1+torch.exp(     d_out_fake)) ).mean()
    w_loss = ((-1)*torch.mean(d_out_fake) + torch.mean(d_out_real))
+   hinge_loss = torch.mean(F.relu(1. - d_out_real))+ torch.mean(F.relu(1. + d_out_fake))
    # print(d_logistic_loss)
    # print(d_logistic_loss.shape)
    # alpha = torch.cuda.FloatTensor(np.random.random(1))
    # alpha1 = alpha
-   loss1 = alpha*d_logistic_loss
+   loss3 = alpha*hinge_loss
+   loss1 = (1-alpha)*d_logistic_loss
    # loss1 = 0
    loss2 = (1-alpha)*w_loss
    # wgan_loss = d_logistic_loss + ((1-alpha)*w_loss)
    # wgan_loss = ((-1)*torch.mean(d_out_fake) + torch.mean(d_out_real))/torch.mean(d_out_real)
    # wgan_loss = torch.exp((-1)*torch.mean(d_out_real) + torch.mean(d_out_fake)/torch.mean(d_out_real))
    # gp = wgan_gp(self,fake,real,LAMBDA,netD)
-   return loss1,loss2
-def wgan_gp(self,fake,real,LAMBDA,netD,d_param,centered):
+   return loss1,loss2,loss3
+def wgan_gp(self,fake,real,LAMBDA,netD,centered):
    real_data = real
    real_data = real_data.cuda()
    fake_data = fake
@@ -67,7 +70,7 @@ def wgan_gp(self,fake,real,LAMBDA,netD,d_param,centered):
             # interpolates = interpolates.to(device)#.cuda()
    interpolates = interpolates.cuda()
    interpolates = torch.autograd.Variable(interpolates, requires_grad=True)
-   disc_interpolates = netD(interpolates,d_param,True)
+   disc_interpolates = netD(interpolates)
    gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
                         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),#.cuda(), #if use_cuda else torch.ones(
                                     #disc_interpolates.size()),
@@ -77,7 +80,7 @@ def wgan_gp(self,fake,real,LAMBDA,netD,d_param,centered):
    gradient_penalty = ((gradients.norm(2, dim=1) - centered) ** 2).mean() * LAMBDA
         
    return gradient_penalty
-def new_gp(self,fake,real,LAMBDA,netD,d_param,centered,scale=0.1):
+def new_gp(self,fake,real,LAMBDA,netD,centered,scale=0.1):
    real_data = real
    real_data = real_data.cuda()
    fake_data = fake
@@ -95,7 +98,7 @@ def new_gp(self,fake,real,LAMBDA,netD,d_param,centered,scale=0.1):
             # interpolates = interpolates.to(device)#.cuda()
    interpolates = interpolates.cuda()
    interpolates = torch.autograd.Variable(interpolates, requires_grad=True)
-   disc_interpolates = netD(interpolates,d_param,True)
+   disc_interpolates = netD(interpolates)
    gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
                         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),#.cuda(), #if use_cuda else torch.ones(
                                     #disc_interpolates.size()),
@@ -145,8 +148,8 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
 
    check_opt_(opt)
    # if opt.local_rank == 0 : 
-      # write_real(opt, loader)
-   # write_real_num(opt, loader)
+   #    write_real(opt, loader)
+#    write_real_num(opt, loader)
    if z_y_gen is not None:
       z_gen = z_y_gen
    # torch.manual_seed(opt.seed)
@@ -154,7 +157,7 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
    # if torch.cuda.is_available():
       # torch.cuda.manual_seed_all(opt.seed)
 
-   # torch.backends.cudnn.benchmark = True
+   torch.backends.cudnn.benchmark = True
    optim_config = OptimConfig(opt)
    begin = 0
    ddg = DDG(opt, d_config, g_config, z_gen, optim_config,fromfile)
@@ -170,7 +173,7 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
 
    #---  xICFG
    iterator = None
-   torch.autograd.set_detect_anomaly(True)
+   # torch.autograd.set_detect_anomaly(True)
    for stage in range(begin,opt.num_stages):  
       if opt.local_rank == 0 : 
         timeLog('xICFG stage %d -----------------' % (stage+1))
@@ -178,11 +181,6 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
       
       iterator,diff,d_loss_v,d_loss_gp,d_fake,d_real = ddg.icfg(loader, iterator, d_loss, opt.cfg_U)
       ddg.epoch = stage
-      # print('ddg.epoch {}'.format(ddg.epoch))
-      # if stage >= 2000:
-      #    change_lr_(ddg.d_optimizer,optim_config.lr0)
-      # if stage >= 5000:
-      #    change_lr_(ddg.d_optimizer,optim_config.lr0*0.1)
      
       if opt.diff_max > 0 and abs(diff) > opt.diff_max and stage >= 2000:
          timeLog('Stopping as |D(real)-D(gen)| exceeded ' + str(opt.diff_max) + '.')
@@ -192,11 +190,7 @@ def cfggan(opt, d_config, g_config, z_gen, loader,fromfile=None,saved=None,z_y_g
          if opt.local_rank == 0:
            save_ddg(opt, ddg, stage)
       if is_time_to_generate(opt, stage):
-         # if opt.local_rank == 0:
          generate(opt, ddg, stage)
-         # fake = ddg.generate(opt.num_gen)
-         # dist.barrier()
-         # print('finish{}'.format(opt.local_rank))
          
       g_loss_v=ddg.approximate(g_loss, opt.cfg_N)
       # print('end{},stage{}'.format(opt.local_rank,stage))         
@@ -221,7 +215,7 @@ def write_real(opt, loader):
 def write_real_num(opt, loader,num=800):
    ## appoint the num = 1000
    timeLog('write_real_num: ... ')
-   dir = 'real'
+   dir = 'real_Imagenet'
    if not os.path.exists(dir):
       os.mkdir(dir)
 
@@ -234,7 +228,7 @@ def write_real_num(opt, loader,num=800):
          index+=1
          total_num+=1
          nm = dir + os.path.sep + opt.dataset + '-%dc'%total_num
-         write_image(real[index-1:index], nm + 'xx.jpg', nrow=1)
+         write_image(real[index-1:index], nm + 'jj.jpg', nrow=1)
       real,_ = get_next(loader, None)
       real = real[0]
       index = 0   
@@ -296,12 +290,11 @@ class DDG:
       self.z_dim = opt.z_dim  
       self.d_params_list=[]   
       self.rank = opt.local_rank
-      print('rank{}'.format(self.rank))
+      # print('rank{}'.format(self.rank))
       self.world_size = opt.world_size
       self.device = opt.device
       self.gpu = opt.gpu
       self.batch_size = opt.batch_size
-      print(self.batch_size)
       
     
       
@@ -384,7 +377,8 @@ class DDG:
       self.d_net.load_state_dict(d['d_params'].state_dict())
 #       self.g_net = copy.deepcopy(d['g_params'])
       self.g_net.load_state_dict(d['g_params'].state_dict())
-      self.d_optimizer.load_state_dict(d['d_optimizer'].state_dict())
+      if self.optim_config is not None:
+        self.d_optimizer.load_state_dict(d['d_optimizer'].state_dict())
       # copy_params(src=d['d_params'], dst=self.d_params)
       # copy_params(src=d['g_params'], dst=self.g_params)      
       self.cfg_eta = d['cfg_eta']
@@ -413,36 +407,28 @@ class DDG:
          t = self.num_D()
       if batch_size <= 0:
          batch_size = num_gen
-         
       num_gened = 0
       fakes = None
       zs = None
       gys =None
       is_train = False
       gy = None
-      while num_gened < num_gen:
+      while num_gened < num_gen:  
          num = min(batch_size, num_gen - num_gened)
-         with torch.no_grad():
-            if self.num_class is not None:
+         with torch.no_grad(): 
+            if self.num_class is not None: 
               z,gy = self.z_gen(num,self.z_dim,self.num_class)
             #   print('before{}'.format(z))
             #   z.sample_()
             #   print('after{}'.format(z))
             #   gy.sample_()
               fake = self.g_net(cast(z),cast(gy))
-            else:
+            else: 
               z,gy = self.z_gen(num)
-              
-              fake = self.g_net(cast(z))
-         if self.verbose:   
-            if self.epoch % 50 == 0:
-               vizG_n.images(fake,opts=dict(title='-1 - 1 fake images vizG_n+stage{}+numD xxxx'.format(self.epoch), caption='vizG_n D.'))   
-               fake_g = (fake+1)/2
-               vizG_n.images(fake_g,opts=dict(title='0 - 1 fake images vizG_n+stage{}+numD xxxx'.format(self.epoch), caption='vizG_n D.'))    
-
+              z1 = cast(z) 
+              fake = self.g_net(z1)
          for t0 in range(t):      
-            # self.d_net.load_state_dict(self.get_d_params(t0))
-                     
+            # self.d_net.load_state_dict(self.get_d_params(t0))            
             fake = fake.detach()
             # gy = gy.detach()           
             if fake.grad is not None:
@@ -460,7 +446,7 @@ class DDG:
             if self.verbose:
                timeLog('DDG::generate ... with d_out={}'.format(d_out_1))
             # d_out = self.d_net(fake, self.d_params, True)
-            d_out.backward(torch.ones_like(d_out))   
+            d_out.backward(torch.ones_like(d_out))
             # print(fake.grad.data)
             fake.data += self.cfg_eta * fake.grad.data
             
@@ -471,11 +457,6 @@ class DDG:
             if self.verbose:
                timeLog('DDG::generate ... with fake.data=%f and fake.grad=%f' % (torch.sum(fake.data),torch.sum(fake.grad.data)))
             # fake.data += self.cfg_eta * (fake.grad.data*torch.mean(self.real_sample)-torch.mean(d_out))/torch.mean(self.real_sample)/torch.mean(self.real_sample)
-         if self.verbose:
-            if self.epoch % 50 == 0:
-               vizG_n.images(fake,opts=dict(title='-1 - 1 fake images vizG_n+stage{}+numD full'.format(self.epoch), caption='vizG_n D.'))   
-               fake_g = (fake+1)/2
-               vizG_n.images(fake_g,opts=dict(title='0 - 1 fake images vizG_n+stage{}+numD full'.format(self.epoch), caption='vizG_n D.')) 
          if fakes is None:
             sz = [num_gen] + list(fake.size())[1:]
             fakes = torch.Tensor(torch.Size(sz), device=torch.device('cpu'))
@@ -538,9 +519,9 @@ class DDG:
             # d_out_real = self.d_net(cast(sample[0]), self.get_d_params(t), is_train)
             # d_out_fake = self.d_net(cast(fake), self.get_d_params(t), is_train)
             # loss = d_loss(d_out_real, d_out_fake)
-            loss1,loss2 = d_loss(d_out_real, d_out_fake,self.alpha)
-            loss = loss1 + loss2
-            loss.backward()
+            loss1,loss2,loss3 = d_loss(d_out_real, d_out_fake,self.alpha)
+            loss = loss1 + loss2+loss3
+            # loss.backward()
             loss_gp=0
             # print(self.lamda)
             if self.lamda != 0:
@@ -549,19 +530,21 @@ class DDG:
                # print(self.lamda)
                if self.gptype ==0:
                   # print('0 ----{}'.format(self.gptype))
-                  loss_gp = wgan_gp(self,fake,self.real_sample,self.lamda,self.d_net,self.d_params,0)
-                  loss_gp.backward()
+                  loss_gp = wgan_gp(self,fake,self.real_sample,self.lamda,self.d_net,0)
+                  # loss_gp.backward()
                elif self.gptype ==1:
                   # print('1 ----{}'.format(self.gptype))
-                  loss_gp = wgan_gp(self,fake,self.real_sample,self.lamda,self.d_net,self.d_params,1)
-                  loss_gp.backward()
+                  loss_gp = wgan_gp(self,fake,self.real_sample,self.lamda,self.d_net,1)
+                  # loss_gp.backward()
                elif self.gptype ==2:
                   # print('2 ----{}'.format(self.gptype))
-                  loss_gp = new_gp(self,fake,self.real_sample,self.lamda,self.d_net,self.d_params,0,scale=self.scale)
-                  loss_gp.backward()
+                  loss_gp = new_gp(self,fake,self.real_sample,self.lamda,self.d_net,0,scale=self.scale)
+                  # loss_gp.backward()
                else:
                   raise ValueError('Unknown gptype: %s ...' % self.gptype)
             # print(d_out_fake.grad.data)
+            loss = loss + loss_gp
+            loss.backward()
             self.d_optimizer.step()
             # print(d_out_fake.grad.data)
             self.d_optimizer.zero_grad()         
@@ -573,7 +556,7 @@ class DDG:
          
          if t_inc > 0 and ((t+1) % t_inc == 0 or t == self.num_D()-1) and self.rank == 0:
             logging('  t=%d: real,%s, fake,%s ' % (t+1, sum_real/count, sum_fake/count))
-            logging('  t=%d: loss_logistic,%s, loss_wgan,%s ' % (t+1, loss1, loss2))
+            logging('  t=%d: loss_logistic,%s, loss_wgan,%s, loss_hinge,%s ' % (t+1, loss1, loss2,loss3))
 
       raise_if_nan(sum_real)
       raise_if_nan(sum_fake)
@@ -589,6 +572,8 @@ class DDG:
          # z.sample_()
          # gy.sample_()
          # print(gy)
+#          print(gy.shape)
+#          print(z.shape)
          g_out = self.g_net(cast(z),cast(gy))
          z_dim = z.size(1)
       else:
@@ -650,20 +635,20 @@ class DDG:
         target_fakes,zs,gys = self.generate(cfg_N, do_return_z=True, batch_size=batch_size)
         dataset = TensorDataset(zs, target_fakes)
       # print('after{}'.format(self.rank))
-      # train_sampler = torch.utils.data.distributed.DistributedSampler(dataset,
-      #                                                               num_replicas=self.world_size,
-      #                                                               rank=self.rank)
-      # loader = torch.utils.data.DataLoader(dataset,
-      #                                          batch_size=self.batch_size,
-      #                                          shuffle=False,
-      #                                          num_workers=1,
-      #                                          pin_memory=True,
-      #                                          sampler=train_sampler,
-      #                                          drop_last = True) 
+      train_sampler = torch.utils.data.distributed.DistributedSampler(dataset,
+                                                                    num_replicas=self.world_size,
+                                                                    rank=self.rank)
+      loader = torch.utils.data.DataLoader(dataset,
+                                               batch_size=self.batch_size,
+                                               shuffle=False,
+                                               num_workers=1,
+                                               pin_memory=True,
+                                               sampler=train_sampler,
+                                               drop_last = True) 
      
       # print(target_fakes.shape)  
-      loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0,
-                          pin_memory = False)
+      # loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0,
+      #                     pin_memory = False)
       g_loss_v=self._approximate(loader, g_loss)
       return g_loss_v
 
@@ -682,8 +667,8 @@ class DDG:
       # i = 0
       if self.rank == 0:
         timeLog('DDG::_approximate using %d data points ...' % len(loader.dataset))
-      if self.rank == 1:
-        timeLog('rank1 DDG::_approximate using %d data points ...' % len(loader.dataset))
+      # if self.rank == 1:
+      #   timeLog('rank1 DDG::_approximate using %d data points ...' % len(loader.dataset))
       for epoch in range(self.optim_config.cfg_x_epo):
 
          for sample in loader:
@@ -770,33 +755,32 @@ def generate(opt, ddg, stage='',l='1'):
    
    dir = os.path.dirname(opt.gen)
    if not os.path.exists(dir):
-      os.makedirs(dir)   
-      
-   fake = ddg.generate(opt.num_gen)
-   
-   if opt.dataset == 'Toy':
-      nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen)
-      from matplotlib import pyplot as plt
-      from sample_gaussian import sample_mog
-      data = sample_mog(opt.num_gen)
-      fig = plt.figure(figsize=(5,5))
-      plt.scatter(data[:,0],data[:,1],  c='g',edgecolor='none')
-      plt.scatter(fake[:,0],fake[:,1], edgecolor='none')
-      plt.xlabel([])
-      plt.ylabel([])
-      plt.axis('off')
-      fig.savefig(nm+'.jpg',dpi=600,format='jpg')
-      return
+      os.makedirs(dir)        
+   fake = ddg.generate(opt.num_gen) 
+   if opt.local_rank == 0:
+#      if opt.dataset == 'Toy':
+#         nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen)
+#         from matplotlib import pyplot as plt
+#         from sample_gaussian import sample_mog
+#         data = sample_mog(opt.num_gen)
+#         fig = plt.figure(figsize=(5,5))
+#         plt.scatter(data[:,0],data[:,1],  c='g',edgecolor='none')
+#         plt.scatter(fake[:,0],fake[:,1], edgecolor='none')
+#         plt.xlabel([])
+#         plt.ylabel([])
+#         plt.axis('off')
+#         fig.savefig(nm+'.jpg',dpi=600,format='jpg')
+#         return
 
-   if opt.gen_nrow > 0:
-      nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen) # 'c' for collage or collection
-      write_image(fake, nm+'.jpg', nrow=opt.gen_nrow)   
-   else:
-      for i in range(opt.num_gen):
-         nm = opt.gen +l+ ('%s-%d' % (stg,i))      
-         write_image(fake[i], nm+'.jpg')
+     if opt.gen_nrow > 0:
+        nm = opt.gen +l+ '%s-%dc' % (stg,opt.num_gen) # 'c' for collage or collection
+        write_image(fake, nm+'.jpg', nrow=opt.gen_nrow)   
+     else:
+        for i in range(opt.num_gen):
+           nm = opt.gen +l+ ('%s-%d' % (stg,i))      
+           write_image(fake[i], nm+'.jpg')
  
-   timeLog('Done with generating %d ... ' % opt.num_gen)    
+     timeLog('Done with generating %d ... ' % opt.num_gen)    
 
 #-------------------------------------------------------------
 class OptimConfig:

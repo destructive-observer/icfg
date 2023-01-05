@@ -31,7 +31,7 @@ def conv2dT_params(ni, no, k, do_bias, std=0.01):
 
 
 class Generator_toy(nn.Module):
-  def __init__(self,input_dim=256,output_dim=2, n_hidden=128, n_layer=2):
+  def __init__(self,input_dim=128,output_dim=2, n_hidden=256, n_layer=2):
     super(Generator_toy,self).__init__()
     self.init = 'ortho'
     self.skip_init = False
@@ -69,7 +69,7 @@ class Generator_toy(nn.Module):
     return h
 
 class discriminator_toy(nn.Module):
-  def __init__(self,input_dim=2,output_dim=1, n_hidden=128, n_layer=2):
+  def __init__(self,input_dim=2,output_dim=1, n_hidden=256, n_layer=2):
     super(discriminator_toy,self).__init__()
     self.init = 'ortho'
     self.skip_init = False
@@ -306,6 +306,154 @@ class Discriminator(nn.Module):
     # Apply global sum pooling as in SN-GAN
    #  h = torch.sum(self.activation(h), [2, 3])
     # Get initial class-unconditional output
+    out = self.linear(h)
+    # Get projection of final featureset onto class vectors and add to evidence
+   #  out = out + torch.sum(self.embed(y) * h, 1, keepdim=True)
+    return out
+
+
+
+##--------use nn module G and D-------------------#
+
+
+class Discriminator_Resnet(nn.Module):
+
+  def __init__(self, nn0, imgsz,
+             channels,    # 1: gray-scale, 3: color
+             norm_type,   # 'bn', 'none'
+             requires_grad, 
+             depth=3, leaky_slope=0.2, nodemul=2, do_bias=True,init_type='NO2'):
+    super(Discriminator_Resnet, self).__init__()
+    # Width multiplier
+    self.nn0 = nn0
+    # Use Wide D as in BigGAN and SA-GAN or skinny D as in SN-GAN?
+    self.imgsz = imgsz
+    # Resolution
+    self.channels = channels
+    # Kernel size
+    self.norm_type = norm_type
+    # Attention?
+    self.requires_grad = requires_grad
+    # Number of classes
+    self.depth = depth
+    # Activation
+#     self.leaky_slope = leaky_slope
+    # Initialization style
+    self.nodemul = nodemul
+    # Parameterization style
+    self.do_bias = do_bias
+    # Epsilon for Spectral Norm?
+    self.init = init_type
+    self.kernel = 3
+    self.padding= (self.kernel-1)//2
+    self.count = 1
+    self.skip_init = False
+    self.stride = 1
+    self.nn = self.nn0
+    self.blocks_all=[]
+#     self.blocks_module=[]
+    # Fp16?
+    # Prepare model
+    # self.blocks is a doubly-nested list of modules, the outer loop intended
+    # to be over blocks at a given resolution (resblocks and/or self-attention)
+    self.blocks_all = []   
+    self.act=nn.ReLU(inplace=True)
+    for index in range(self.depth):
+        self.blocks=[]
+        for i in range(self.count):
+            if index != 0:
+                self.blocks+=[[nn.ReLU(inplace=True)]]
+            if index == 0:
+                self.blocks += [[nn.Conv2d(self.channels,self.nn,self.kernel,bias=self.do_bias,stride=self.stride,padding=self.padding)]]
+                self.blocks+=[[nn.ReLU(inplace=True)]]
+                self.blocks += [[nn.Conv2d(self.nn,self.nn,self.kernel,bias=self.do_bias,stride=self.stride,padding=self.padding)]]        
+                if self.norm_type == 'bn':
+                    self.blocks += [[nn.BatchNorm2d(self.nn)]]
+      # If attention on this block, attach it to the end
+                self.blocks+=[[nn.AvgPool2d(2)]]
+                self.blocks+=[[nn.AvgPool2d(2)]]
+        
+                self.blocks+=[[nn.Conv2d(self.channels,self.nn,1)]]
+#                 self.nn = self.nn*self.nodemul            
+            else:       
+                self.blocks += [[nn.Conv2d(self.nn if i == 0 else self.nn*nodemul,self.nn if i == 0 else self.nn*nodemul,self.kernel,bias=self.do_bias,stride=self.stride,padding=self.padding)]]
+                self.blocks+=[[nn.ReLU(inplace=True)]]
+                self.blocks += [[nn.Conv2d(self.nn if i == 0 else self.nn*nodemul,self.nn*nodemul,self.kernel,bias=self.do_bias,stride=self.stride,padding=self.padding)]]        
+                if self.norm_type == 'bn':
+                    self.blocks += [[nn.BatchNorm2d(self.nn*nodemul)]]
+      # If attention on this block, attach it to the end
+                self.blocks+=[[nn.AvgPool2d(2)]]
+                self.blocks+=[[nn.AvgPool2d(2)]]
+        
+                self.blocks+=[[nn.Conv2d(self.nn if i == 0 else self.nn*nodemul,self.nn*nodemul,1)]]
+                self.nn = self.nn*self.nodemul
+        self.blocks_all.append(self.blocks)  
+    
+#     for block in self.blocks_all
+
+    mlist=[]
+    for block in self.blocks_all:
+        m_list = []
+        for b in block:
+            m_list+=nn.ModuleList(b)
+        mlist.append(nn.ModuleList(m_list))    
+    self.blocks_all =  nn.ModuleList(mlist)
+#     self.blocks_all = nn.ModuleList([nn.ModuleList(inblock) for inblock in block for block in self.blocks_all])
+    
+    # Linear output layer. The output dimension is typically 1, but may be
+    # larger if we're e.g. turning this into a VAE with an inference output
+    self.sz = imgsz // (2**depth)
+    self.linear = nn.Linear(self.sz*self.sz*self.nn0*(2**(depth-1)) ,1)    # Embedding for projection discrimination
+   #  print(self.sz*self.sz*self.nn)
+    # Initialize weights
+    if not self.skip_init:
+      self.init_weights()
+  # Initialize
+  def init_weights(self):
+    self.param_count = 0
+    for module in self.modules():
+      if (isinstance(module, nn.Conv2d)
+          or isinstance(module, nn.Linear)
+          or isinstance(module, nn.Embedding)):
+        if self.init == 'ortho':
+          init.orthogonal_(module.weight)
+        elif self.init == 'N02':
+          init.normal_(module.weight, 0, 0.02)
+        elif self.init in ['glorot', 'xavier']:
+          init.xavier_uniform_(module.weight)
+        else:
+          print('Init style not recognized...')
+        self.param_count += sum([p.data.nelement() for p in module.parameters()])
+    print('Param count for D''s initialized parameters: %d' % self.param_count)
+
+  def forward(self, x, y=None):
+    # Stick x into h for cleaner for loops without flow control
+    h = x
+#     h = self.firstconv(h)
+#     h = self.firstact(h)
+    # Loop over blocks
+    for index, blocklist in enumerate(self.blocks_all):
+        x1 = h
+#         print(h.shape)
+        for index2, block in enumerate(blocklist):
+            if index ==0 and index2 == 5:
+                x1= block(x1)
+            elif index ==0 and index2 == 6:
+                h = h + block(x1)
+            elif index != 0 and index2 == 6:
+                x1= block(x1)     
+            elif index != 0 and index2 == 7:
+                h = h + block(x1)           
+            else:
+                h = block(h)
+#     h = h.view(h.size(0),-1)
+   #  print(h.shape)
+    # Apply global sum pooling as in SN-GAN
+   #  h = torch.sum(self.activation(h), [2, 3])
+    # Get initial class-unconditional output
+    h = self.act(h)
+    h = h.view(h.size(0),-1)
+#     print(h.shape)
     out = self.linear(h)
     # Get projection of final featureset onto class vectors and add to evidence
    #  out = out + torch.sum(self.embed(y) * h, 1, keepdim=True)
@@ -702,8 +850,8 @@ class biggan_G(nn.Module):
       ys = [y] * len(self.blocks)
       
     # First linear layer
-    # print(z.shape)
-    # print(self.linear.weight.shape)
+#     print(z.shape)
+#     print(self.linear.weight.shape)
     h = self.linear(z)
     # Reshape
     h = h.view(h.size(0), -1, self.bottom_width, self.bottom_width)
@@ -798,6 +946,7 @@ class biggan_D(nn.Module):
     # self.blocks is a doubly-nested list of modules, the outer loop intended
     # to be over blocks at a given resolution (resblocks and/or self-attention)
     self.blocks = []
+#     print(self.arch['attention'])
     for index in range(len(self.arch['out_channels'])):
       self.blocks += [[layers.DBlock(in_channels=self.arch['in_channels'][index],
                        out_channels=self.arch['out_channels'][index],
@@ -881,6 +1030,6 @@ class biggan_D(nn.Module):
     # Get initial class-unconditional output
     out = self.linear(h)
     # Get projection of final featureset onto class vectors and add to evidence
-    out = out 
-   #  + torch.sum(self.embed(y) * h, 1, keepdim=True)
+    y = y.long()
+    out = out + torch.sum(self.embed(y) * h, 1, keepdim=True)
     return out

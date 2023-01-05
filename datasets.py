@@ -13,6 +13,7 @@ import torchvision.transforms as transforms
 from torchvision.datasets.utils import download_url, check_integrity
 import torch.utils.data as data
 from torch.utils.data import DataLoader
+import random
          
 IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm']
 
@@ -33,6 +34,13 @@ def is_image_file(filename):
 def find_classes(dir):
     classes = [d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))]
     classes.sort()
+    ## random choice 100 to gengerate
+#     rand_id = random.sample(range(0,1000),10)
+#     rand_id = [0,1,2,3,4,5,6,7,8,9]
+#     classes_rand = [classes[i]  for i in rand_id]
+#     class_to_idx = {classes[i]: i for i in rand_id}
+#     print(classes_rand)
+#     print(class_to_idx)
     class_to_idx = {classes[i]: i for i in range(len(classes))}
     return classes, class_to_idx
 

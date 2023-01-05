@@ -50,7 +50,7 @@ def proc(rank, gpu,opt):
      I_set = 'I64'     
      opt.resolution = utils_biggan.imsize_dict[I_set]
      opt.n_classes = utils_biggan.nclass_dict[I_set]
-     opt.n_classes = 10
+#      opt.n_classes = 1000
      opt.G_activation = utils_biggan.activation_dict[opt.G_nl]
      opt.D_activation = utils_biggan.activation_dict[opt.D_nl]
    elif opt.dataset =='CIFAR10':
@@ -87,8 +87,12 @@ def proc(rank, gpu,opt):
                                 opt.norm_type, requires_grad, depth=opt.d_depth, 
                                 do_bias=not opt.do_no_bias)
       
+      elif opt.d_model == Resnet4:
+        return thread_netdef.Discriminator_Resnet(opt.d_dim, opt.image_size, opt.channels, 
+                                opt.norm_type, requires_grad, depth=opt.d_depth, 
+                                do_bias=not opt.do_no_bias)
       elif opt.d_model == Biggan:
-        return thread_netdef.biggan_D(resolution=opt.resolution,D_ch=opt.g_dim,D_attn=str(opt.g_dim))
+        return thread_netdef.biggan_D(resolution=opt.resolution,D_ch=opt.d_dim,D_attn=str(opt.d_dim),dim_z = opt.z_dim,n_classes=opt.n_classes)
       elif opt.d_model == Toy:
         return thread_netdef.discriminator_toy()          
       else:
@@ -98,17 +102,18 @@ def proc(rank, gpu,opt):
              return thread_netdef.Generator(opt.z_dim, opt.g_dim, opt.image_size, opt.channels, 
                                 opt.norm_type, requires_grad, depth=opt.g_depth, 
                                 do_bias=not opt.do_no_bias)
-      elif opt.d_model == Biggan:
-            return thread_netdef.biggan_G(resolution=opt.resolution,G_ch=opt.g_dim,G_attn=str(opt.g_dim))       
+      elif opt.g_model == Biggan:
+            print(opt.n_classes)
+            return thread_netdef.biggan_G(resolution=opt.resolution,G_ch=opt.g_dim,G_attn=str(opt.g_dim),dim_z = opt.z_dim,n_classes=opt.n_classes)       
       
-      elif opt.d_model == Toy:
+      elif opt.g_model == Toy:
             return thread_netdef.Generator_toy()      
       else:
           raise ValueError('g_model must be dcganx or fcn.')
    def z_gen(num):
       return normal_(torch.Tensor(num, opt.z_dim), std=opt.z_std),torch.zeros(num).random_(0, 10)
    def z_y_gen_function_new(num,dim_z, nclasses):
-      return normal_(torch.Tensor(num, opt.z_dim), std=opt.z_std),torch.zeros(num).random_(0, 10)
+      return normal_(torch.Tensor(num, opt.z_dim), std=opt.z_std),torch.zeros(num).random_(0, nclasses)
    def z_y_gen_function(num,num_labels):
       one_hot_labels = torch.FloatTensor(num, num_labels)
       one_hot_labels.zero_()
@@ -124,7 +129,8 @@ def proc(rank, gpu,opt):
    #       return z_gen(num)
    if opt.dataset == 'ImageNet' and opt.model =='biggan':
    #   z_y_gen = utils_biggan.prepare_z_y
-     opt.n_classes = 10
+#      opt.n_classes = 10
+#      opt.n_classes = None
      z_y_gen = z_y_gen_function_new
      ds = utils_biggan.get_data_loaders(**{**vars(opt), 'batch_size': opt.batch_size,
                                       'start_itr': 0,'dataset':'I64','distributed':True})
@@ -139,6 +145,37 @@ def proc(rank, gpu,opt):
                                                pin_memory=False,
                                                sampler=train_sampler,
                                                drop_last = True)
+   elif opt.dataset == 'ImageNet' and opt.model =='balance':
+     z_y_gen = z_y_gen_function_new
+     ds = utils_biggan.get_data_loaders(**{**vars(opt), 'batch_size': opt.batch_size,
+                                      'start_itr': 0,'dataset':'I64','distributed':True})
+    #  loader = loader[0]
+     train_sampler = torch.utils.data.distributed.DistributedSampler(ds,
+                                                                    num_replicas=opt.world_size,
+                                                                    rank=rank)
+     loader = torch.utils.data.DataLoader(ds,
+                                               batch_size=opt.batch_size,
+                                               shuffle=False,
+                                               num_workers=0,
+                                               pin_memory=False,
+                                               sampler=train_sampler,
+                                               drop_last = True)
+   elif opt.dataset == 'ImageNet' and opt.model =='balance2':
+     z_y_gen = z_y_gen_function_new
+     ds = utils_biggan.get_data_loaders(**{**vars(opt), 'batch_size': opt.batch_size,
+                                      'start_itr': 0,'dataset':'I64','distributed':True})
+    #  loader = loader[0]
+     train_sampler = torch.utils.data.distributed.DistributedSampler(ds,
+                                                                    num_replicas=opt.world_size,
+                                                                    rank=rank)
+     loader = torch.utils.data.DataLoader(ds,
+                                               batch_size=opt.batch_size,
+                                               shuffle=False,
+                                               num_workers=0,
+                                               pin_memory=False,
+                                               sampler=train_sampler,
+                                               drop_last = True)
+    
    elif opt.dataset == 'CIFAR10' and opt.model =='biggan':
      z_y_gen = utils_biggan.prepare_z_y
      ds = get_ds(opt.dataset, opt.dataroot, is_train=True, do_download=opt.do_download, do_augment=opt.do_augment)

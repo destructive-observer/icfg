@@ -265,10 +265,11 @@ class ImageFolder(Dataset):
 class ToySample(Dataset):
     def __init__(self,num=2000,batch_size=512):
         self.files=num*batch_size
+        self.batch_size = batch_size
 
     def __len__(self):
       #   print(len(self.files) * self.repeat)
         return self.files
 
     def __getitem__(self, idx):
-        return sample_mog(1)
+        return sample_mog(self.batch_size)
